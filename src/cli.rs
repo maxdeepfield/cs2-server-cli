@@ -37,8 +37,14 @@ pub async fn install_server(name: &str, dir: Option<&Path>) -> Result<()> {
         return Err(e);
     }
 
-    info!("CS2 server '{}' installed successfully at {:?}", name, server_dir);
-    println!("CS2 server '{}' installed successfully at {:?}", name, server_dir);
+    info!(
+        "CS2 server '{}' installed successfully at {:?}",
+        name, server_dir
+    );
+    println!(
+        "CS2 server '{}' installed successfully at {:?}",
+        name, server_dir
+    );
     Ok(())
 }
 
@@ -132,7 +138,10 @@ pub async fn update_server(name: &str) -> Result<()> {
 }
 
 pub async fn configure_server(name: &str, key: &str, value: &str) -> Result<()> {
-    info!("Configuring server '{}' setting '{}' to '{}'", name, key, value);
+    info!(
+        "Configuring server '{}' setting '{}' to '{}'",
+        name, key, value
+    );
 
     let config = Config::load_or_default()?;
     let server_path = config.get_server_path(name)?;
@@ -173,15 +182,17 @@ pub async fn install_map(name: &str, map: &str) -> Result<()> {
         match reqwest::blocking::get(map) {
             Ok(response) => {
                 if response.status().is_success() {
-                    let map_data = response.bytes()
+                    let map_data = response
+                        .bytes()
                         .with_context(|| "Failed to read map data from response")?;
 
                     // Extract filename from URL or use default
                     let filename = map.split('/').last().unwrap_or("custom_map.bsp");
                     let maps_dir = server_path.join("game").join("csgo").join("maps");
 
-                    std::fs::create_dir_all(&maps_dir)
-                        .with_context(|| format!("Failed to create maps directory: {:?}", maps_dir))?;
+                    std::fs::create_dir_all(&maps_dir).with_context(|| {
+                        format!("Failed to create maps directory: {:?}", maps_dir)
+                    })?;
 
                     let map_path = maps_dir.join(filename);
                     std::fs::write(&map_path, map_data)
@@ -211,34 +222,54 @@ pub async fn install_map(name: &str, map: &str) -> Result<()> {
         std::fs::create_dir_all(&maps_dir)
             .with_context(|| format!("Failed to create maps directory: {:?}", maps_dir))?;
 
-        let filename = source_path.file_name()
+        let filename = source_path
+            .file_name()
             .with_context(|| "Invalid map filename")?;
         let dest_path = maps_dir.join(filename);
 
         std::fs::copy(source_path, &dest_path)
             .with_context(|| format!("Failed to copy map file to {:?}", dest_path))?;
 
-        info!("Map '{}' installed successfully", filename.to_string_lossy());
-        println!("Map '{}' installed successfully", filename.to_string_lossy());
+        info!(
+            "Map '{}' installed successfully",
+            filename.to_string_lossy()
+        );
+        println!(
+            "Map '{}' installed successfully",
+            filename.to_string_lossy()
+        );
     }
 
     Ok(())
 }
 
 pub async fn install_plugin(server_name: &str, plugin: &str) -> Result<()> {
-    info!("Installing plugin '{}' for server '{}'", plugin, server_name);
+    info!(
+        "Installing plugin '{}' for server '{}'",
+        plugin, server_name
+    );
 
     let config = Config::load_or_default()?;
     let server_path = config.get_server_path(server_name)?;
 
     // Define known plugins with their download URLs
     let known_plugins = [
-        ("sourcemod", "https://sm.alliedmods.net/smdrop/1.11/sourcemod-1.11.0-git6936-linux.tar.gz"),
-        ("metamod", "https://mms.alliedmods.net/mmsdrop/1.11/mmsource-1.11.0-git1148-linux.tar.gz"),
-        ("steamworks", "https://github.com/KyleSanderson/SteamWorks/releases/download/1.2.3c/package-lin.tgz"),
+        (
+            "sourcemod",
+            "https://sm.alliedmods.net/smdrop/1.11/sourcemod-1.11.0-git6936-linux.tar.gz",
+        ),
+        (
+            "metamod",
+            "https://mms.alliedmods.net/mmsdrop/1.11/mmsource-1.11.0-git1148-linux.tar.gz",
+        ),
+        (
+            "steamworks",
+            "https://github.com/KyleSanderson/SteamWorks/releases/download/1.2.3c/package-lin.tgz",
+        ),
     ];
 
-    let plugin_url = if let Some((_, url)) = known_plugins.iter().find(|(name, _)| *name == plugin) {
+    let plugin_url = if let Some((_, url)) = known_plugins.iter().find(|(name, _)| *name == plugin)
+    {
         *url
     } else if plugin.starts_with("http://") || plugin.starts_with("https://") {
         plugin
@@ -251,12 +282,13 @@ pub async fn install_plugin(server_name: &str, plugin: &str) -> Result<()> {
     match reqwest::blocking::get(plugin_url) {
         Ok(response) => {
             if response.status().is_success() {
-                let plugin_data = response.bytes()
+                let plugin_data = response
+                    .bytes()
                     .with_context(|| "Failed to read plugin data from response")?;
 
                 // Extract to server directory
-                let temp_dir = tempfile::tempdir()
-                    .with_context(|| "Failed to create temporary directory")?;
+                let temp_dir =
+                    tempfile::tempdir().with_context(|| "Failed to create temporary directory")?;
 
                 let archive_path = temp_dir.path().join("plugin_archive");
                 std::fs::write(&archive_path, plugin_data)
@@ -265,15 +297,19 @@ pub async fn install_plugin(server_name: &str, plugin: &str) -> Result<()> {
                 // For now, just extract to plugins directory
                 // TODO: Proper archive extraction
                 let plugins_dir = server_path.join("game").join("csgo").join("addons");
-                std::fs::create_dir_all(&plugins_dir)
-                    .with_context(|| format!("Failed to create plugins directory: {:?}", plugins_dir))?;
+                std::fs::create_dir_all(&plugins_dir).with_context(|| {
+                    format!("Failed to create plugins directory: {:?}", plugins_dir)
+                })?;
 
                 // Simple extraction for tar.gz (basic implementation)
                 if plugin_url.ends_with(".tar.gz") || plugin_url.ends_with(".tgz") {
                     // TODO: Implement proper tar.gz extraction
                     warn!("Tar.gz extraction not fully implemented yet");
-                    std::fs::copy(&archive_path, plugins_dir.join(format!("{}.tar.gz", plugin)))
-                        .with_context(|| "Failed to save plugin archive")?;
+                    std::fs::copy(
+                        &archive_path,
+                        plugins_dir.join(format!("{}.tar.gz", plugin)),
+                    )
+                    .with_context(|| "Failed to save plugin archive")?;
                 } else {
                     std::fs::copy(&archive_path, plugins_dir.join(plugin))
                         .with_context(|| "Failed to save plugin file")?;
@@ -406,7 +442,10 @@ pub async fn backup_server(name: &str, backup_name: &str) -> Result<()> {
     }
 
     info!("Backup '{}' created successfully", backup_name);
-    println!("Backup '{}' created successfully for server '{}'", backup_name, name);
+    println!(
+        "Backup '{}' created successfully for server '{}'",
+        backup_name, name
+    );
     Ok(())
 }
 
@@ -423,7 +462,24 @@ pub async fn restore_server(name: &str, backup_name: &str) -> Result<()> {
     }
 
     info!("Backup '{}' restored successfully", backup_name);
-    println!("Backup '{}' restored successfully for server '{}'", backup_name, name);
+    println!(
+        "Backup '{}' restored successfully for server '{}'",
+        backup_name, name
+    );
     println!("Note: You may need to restart the server for changes to take effect.");
+    Ok(())
+}
+
+pub async fn install_steamcmd() -> Result<()> {
+    info!("Installing SteamCMD");
+
+    if cfg!(target_os = "linux") {
+        let path = crate::steam::SteamManager::install_steamcmd()
+            .with_context(|| "Failed to install SteamCMD")?;
+        println!("SteamCMD installed successfully at {}", path);
+    } else {
+        anyhow::bail!("SteamCMD installation is only supported on Linux");
+    }
+
     Ok(())
 }

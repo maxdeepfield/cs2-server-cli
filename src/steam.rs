@@ -13,7 +13,17 @@ pub struct SteamManager {
 impl SteamManager {
     pub fn new() -> Result<Self> {
         // Try to find steamcmd in common locations
-        let steam_cmd_path = Self::find_steamcmd()?;
+        let steam_cmd_path = match Self::find_steamcmd() {
+            Ok(path) => path,
+            Err(_) => {
+                if cfg!(target_os = "linux") {
+                    info!("SteamCMD not found, attempting to install automatically");
+                    Self::install_steamcmd()?
+                } else {
+                    anyhow::bail!("SteamCMD not found. Please install SteamCMD and ensure it's in your PATH, or specify the full path.");
+                }
+            }
+        };
 
         Ok(Self {
             steam_cmd_path: Some(steam_cmd_path),
@@ -21,9 +31,13 @@ impl SteamManager {
     }
 
     pub async fn download_cs2_server(&self, install_path: &Path) -> Result<()> {
+        let install_path = std::fs::canonicalize(install_path)
+            .with_context(|| format!("Failed to canonicalize install path: {:?}", install_path))?;
         info!("Downloading CS2 server files to {:?}", install_path);
 
-        let steam_cmd = self.steam_cmd_path.as_ref()
+        let steam_cmd = self
+            .steam_cmd_path
+            .as_ref()
             .context("SteamCMD not found. Please install SteamCMD and ensure it's in your PATH.")?;
 
         // CS2 AppID is 730
@@ -39,7 +53,7 @@ impl SteamManager {
             app_id
         );
 
-        let script_path = install_path.with_extension("steamscript");
+        let script_path = install_path.join("steamscript");
         std::fs::write(&script_path, script_content)
             .with_context(|| format!("Failed to write Steam script: {:?}", script_path))?;
 
@@ -52,7 +66,8 @@ impl SteamManager {
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
 
-        let mut child = command.spawn()
+        let mut child = command
+            .spawn()
             .with_context(|| "Failed to spawn SteamCMD process")?;
 
         // Handle Ctrl+C gracefully
@@ -95,9 +110,13 @@ impl SteamManager {
     }
 
     pub async fn update_cs2_server(&self, install_path: &Path) -> Result<()> {
+        let install_path = std::fs::canonicalize(install_path)
+            .with_context(|| format!("Failed to canonicalize install path: {:?}", install_path))?;
         info!("Updating CS2 server files to {:?}", install_path);
 
-        let steam_cmd = self.steam_cmd_path.as_ref()
+        let steam_cmd = self
+            .steam_cmd_path
+            .as_ref()
             .context("SteamCMD not found. Please install SteamCMD and ensure it's in your PATH.")?;
 
         let app_id = "730";
@@ -111,7 +130,7 @@ impl SteamManager {
             app_id
         );
 
-        let script_path = install_path.with_extension("steamscript");
+        let script_path = install_path.join("steamscript");
         std::fs::write(&script_path, script_content)
             .with_context(|| format!("Failed to write Steam script: {:?}", script_path))?;
 
@@ -123,7 +142,8 @@ impl SteamManager {
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
 
-        let mut child = command.spawn()
+        let mut child = command
+            .spawn()
             .with_context(|| "Failed to spawn SteamCMD process")?;
 
         // Handle Ctrl+C gracefully
@@ -160,11 +180,17 @@ impl SteamManager {
         Ok(())
     }
 
-    pub async fn download_with_credentials(&self, install_path: &Path, username: &str, password: &str) -> Result<()> {
+    pub async fn download_with_credentials(
+        &self,
+        install_path: &Path,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        let install_path = std::fs::canonicalize(install_path)
+            .with_context(|| format!("Failed to canonicalize install path: {:?}", install_path))?;
         println!("Downloading CS2 server files with authentication...");
 
-        let steam_cmd = self.steam_cmd_path.as_ref()
-            .context("SteamCMD not found")?;
+        let steam_cmd = self.steam_cmd_path.as_ref().context("SteamCMD not found")?;
 
         let app_id = "730";
 
@@ -179,7 +205,7 @@ impl SteamManager {
             app_id
         );
 
-        let script_path = install_path.with_extension("steamscript");
+        let script_path = install_path.join("steamscript");
         std::fs::write(&script_path, script_content)
             .with_context(|| format!("Failed to write Steam script: {:?}", script_path))?;
 
@@ -190,7 +216,9 @@ impl SteamManager {
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
 
-        let status = command.status().await
+        let status = command
+            .status()
+            .await
             .with_context(|| "Failed to execute SteamCMD")?;
 
         if !status.success() {
@@ -203,13 +231,78 @@ impl SteamManager {
         Ok(())
     }
 
+    pub fn install_steamcmd() -> Result<String> {
+        info!("Installing SteamCMD for Linux");
+
+        // Create SteamCMD directory in home
+        let home_dir = dirs::home_dir().context("Could not determine home directory")?;
+        let steamcmd_dir = home_dir.join("steamcmd");
+        std::fs::create_dir_all(&steamcmd_dir)
+            .with_context(|| format!("Failed to create SteamCMD directory: {:?}", steamcmd_dir))?;
+
+        let archive_path = steamcmd_dir.join("steamcmd_linux.tar.gz");
+        let steamcmd_sh = steamcmd_dir.join("steamcmd.sh");
+
+        // Download SteamCMD
+        let url = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
+        info!("Downloading SteamCMD from {}", url);
+        let response = reqwest::blocking::get(url)
+            .with_context(|| format!("Failed to download SteamCMD from {}", url))?;
+        if !response.status().is_success() {
+            anyhow::bail!("Failed to download SteamCMD: HTTP {}", response.status());
+        }
+        let bytes = response
+            .bytes()
+            .with_context(|| "Failed to read response bytes")?;
+        std::fs::write(&archive_path, bytes)
+            .with_context(|| format!("Failed to save SteamCMD archive to {:?}", archive_path))?;
+
+        // Extract archive
+        info!("Extracting SteamCMD archive");
+        let output = Command::new("tar")
+            .args(["-xzf", archive_path.to_str().unwrap()])
+            .current_dir(&steamcmd_dir)
+            .output()
+            .with_context(|| "Failed to extract SteamCMD archive")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to extract SteamCMD: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        // Clean up archive
+        let _ = std::fs::remove_file(&archive_path);
+
+        // Verify steamcmd.sh exists
+        if !steamcmd_sh.exists() {
+            anyhow::bail!("SteamCMD installation failed: steamcmd.sh not found");
+        }
+
+        // Make executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&steamcmd_sh)
+                .with_context(|| "Failed to get metadata for steamcmd.sh")?
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&steamcmd_sh, perms)
+                .with_context(|| "Failed to set permissions on steamcmd.sh")?;
+        }
+
+        let path_str = steamcmd_sh
+            .to_str()
+            .context("Invalid UTF-8 in SteamCMD path")?
+            .to_string();
+        info!("SteamCMD installed successfully at {}", path_str);
+        Ok(path_str)
+    }
+
     fn find_steamcmd() -> Result<String> {
         // Check common SteamCMD locations
         let possible_paths = if cfg!(target_os = "windows") {
-            vec![
-                "C:\\steamcmd\\steamcmd.exe",
-                "steamcmd.exe",
-            ]
+            vec!["C:\\steamcmd\\steamcmd.exe", "steamcmd.exe"]
         } else {
             vec![
                 "/usr/games/steamcmd",
@@ -241,7 +334,7 @@ impl SteamManager {
             }
         }
 
-        anyhow::bail!("SteamCMD not found. Please install SteamCMD and ensure it's in your PATH, or specify the full path.");
+        Err(anyhow::anyhow!("SteamCMD not found"))
     }
 
     pub fn prompt_credentials() -> Result<(String, String)> {
@@ -250,20 +343,22 @@ impl SteamManager {
         println!();
 
         print!("Steam Username: ");
-        io::stdout().flush()
+        io::stdout()
+            .flush()
             .with_context(|| "Failed to flush stdout")?;
 
         let mut username = String::new();
-        io::stdin().read_line(&mut username)
+        io::stdin()
+            .read_line(&mut username)
             .with_context(|| "Failed to read username")?;
         let username = username.trim().to_string();
 
         print!("Steam Password: ");
-        io::stdout().flush()
+        io::stdout()
+            .flush()
             .with_context(|| "Failed to flush stdout")?;
 
-        let password = rpassword::read_password()
-            .with_context(|| "Failed to read password")?;
+        let password = rpassword::read_password().with_context(|| "Failed to read password")?;
 
         println!(); // New line after password input
 

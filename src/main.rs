@@ -85,6 +85,8 @@ enum Commands {
         /// Backup name
         backup_name: String,
     },
+    /// Install SteamCMD
+    InstallSteamcmd,
 }
 
 #[derive(Subcommand)]
@@ -141,13 +143,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli::install_map(&name, &map).await?;
         }
         Commands::Plugin { plugin_command } => match plugin_command {
-            PluginCommands::Install { server_name, plugin } => {
+            PluginCommands::Install {
+                server_name,
+                plugin,
+            } => {
                 cli::install_plugin(&server_name, &plugin).await?;
             }
             PluginCommands::List { server_name } => {
                 cli::list_plugins(&server_name).await?;
             }
-            PluginCommands::Remove { server_name, plugin } => {
+            PluginCommands::Remove {
+                server_name,
+                plugin,
+            } => {
                 cli::remove_plugin(&server_name, &plugin).await?;
             }
             PluginCommands::Recommended => {
@@ -162,6 +170,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Restore { name, backup_name } => {
             cli::restore_server(&name, &backup_name).await?;
+        }
+        Commands::InstallSteamcmd => {
+            cli::install_steamcmd().await?;
         }
     }
 
